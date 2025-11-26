@@ -7,6 +7,8 @@ import Enroll from './pages/Enroll';
 import Students from './pages/Students';
 import Attendance from './pages/Attendance';
 import Scan from './pages/Scan';
+import StudentProfile from './pages/StudentProfile';
+import Timeline from './pages/Timeline';
 
 function App() {
   return (
@@ -21,8 +23,10 @@ function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/enroll" element={<Enroll />} />
                 <Route path="/students" element={<Students />} />
+                <Route path="/students/:roll" element={<StudentProfile />} />
                 <Route path="/attendance" element={<Attendance />} />
                 <Route path="/scan" element={<Scan />} />
+                <Route path="/timeline" element={<Timeline />} />
               </Routes>
             </main>
           </div>

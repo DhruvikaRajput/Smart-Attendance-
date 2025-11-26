@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Edit2, Download, FileSpreadsheet, CheckSquare, Square, Upload } from 'lucide-react';
 import Card from '../components/Card';
 import Modal from '../components/Modal';
-import { getAttendance, markManualAttendance, getStudents, deleteAttendanceRecord, deleteAllAttendance } from '../api/api';
+import { getAttendance, markManualAttendance, getStudents, deleteAttendanceRecord, deleteAllAttendance, updateAttendanceRecord, exportAttendance, bulkEditAttendance } from '../api/api';
 import { useToast } from '../components/Toast';
 
 export default function Attendance() {
@@ -14,6 +14,11 @@ export default function Attendance() {
   const [formData, setFormData] = useState({ roll: '', status: 'present', timestamp: '' });
   const [submitting, setSubmitting] = useState(false);
   const [deleteModal, setDeleteModal] = useState({ open: false, record: null, type: 'single' });
+  const [editModal, setEditModal] = useState({ open: false, record: null });
+  const [selectedRecords, setSelectedRecords] = useState(new Set());
+  const [bulkActionModal, setBulkActionModal] = useState({ open: false, action: null });
+  const [bulkEditData, setBulkEditData] = useState('');
+  const [bulkEditing, setBulkEditing] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -84,10 +89,94 @@ export default function Attendance() {
         showToast('Attendance record deleted', 'success');
       }
       setDeleteModal({ open: false, record: null, type: 'single' });
+      setSelectedRecords(new Set());
       loadAttendance();
     } catch (error) {
       console.error('Delete error:', error);
       showToast(error.response?.data?.detail || 'Failed to delete attendance', 'error');
+    }
+  };
+
+  const handleEdit = async (updates) => {
+    if (!editModal.record) return;
+    try {
+      await updateAttendanceRecord(editModal.record.id, updates);
+      showToast('Attendance record updated', 'success');
+      setEditModal({ open: false, record: null });
+      loadAttendance();
+    } catch (error) {
+      console.error('Update error:', error);
+      showToast(error.response?.data?.detail || 'Failed to update attendance', 'error');
+    }
+  };
+
+  const handleExport = async (format) => {
+    try {
+      const blob = await exportAttendance(format);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `attendance_${new Date().toISOString().split('T')[0]}.${format === 'csv' ? 'csv' : 'xlsx'}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast(`Exported to ${format.toUpperCase()}`, 'success');
+    } catch (error) {
+      console.error('Export error:', error);
+      showToast('Failed to export attendance', 'error');
+    }
+  };
+
+  const handleBulkAction = async (action) => {
+    if (selectedRecords.size === 0) {
+      showToast('Please select records first', 'warning');
+      return;
+    }
+
+    try {
+      if (action === 'delete') {
+        const updates = Array.from(selectedRecords).map(id => ({ id, _action: 'delete' }));
+        // Delete each selected record
+        for (const id of selectedRecords) {
+          await deleteAttendanceRecord(id);
+        }
+        showToast(`${selectedRecords.size} records deleted`, 'success');
+      } else if (action === 'edit') {
+        // Prepare bulk edit data from selected records
+        const selectedRecordsData = filteredAttendance.filter(r => selectedRecords.has(r.id));
+        const editData = selectedRecordsData.map(r => ({
+          id: r.id,
+          status: r.status,
+          timestamp: r.timestamp
+        }));
+        setBulkEditData(JSON.stringify(editData, null, 2));
+        setBulkActionModal({ open: true, action: 'edit' });
+        return;
+      }
+      setSelectedRecords(new Set());
+      loadAttendance();
+    } catch (error) {
+      console.error('Bulk action error:', error);
+      showToast('Failed to perform bulk action', 'error');
+    }
+  };
+
+  const toggleSelectRecord = (recordId) => {
+    const newSelected = new Set(selectedRecords);
+    if (newSelected.has(recordId)) {
+      newSelected.delete(recordId);
+    } else {
+      newSelected.add(recordId);
+    }
+    setSelectedRecords(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedRecords.size === filteredAttendance.length) {
+      setSelectedRecords(new Set());
+    } else {
+      setSelectedRecords(new Set(filteredAttendance.map(r => r.id)));
     }
   };
 
@@ -120,15 +209,51 @@ export default function Attendance() {
           <h1 className="text-3xl font-bold text-text-primary mb-2">Attendance</h1>
           <p className="text-text-secondary">View and manage attendance records</p>
         </div>
-        {attendance.length > 0 && (
-          <button
-            onClick={() => setDeleteModal({ open: true, record: null, type: 'all' })}
-            className="btn btn-danger flex items-center gap-2"
-          >
-            <Trash2 size={18} />
-            Clear All Attendance
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {attendance.length > 0 && (
+            <>
+              <button
+                onClick={() => handleExport('csv')}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                <Download size={18} />
+                Export CSV
+              </button>
+              <button
+                onClick={() => handleExport('excel')}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                <FileSpreadsheet size={18} />
+                Export Excel
+              </button>
+              {selectedRecords.size > 0 && (
+                <>
+                  <button
+                    onClick={() => handleBulkAction('edit')}
+                    className="btn btn-secondary flex items-center gap-2"
+                  >
+                    <Edit2 size={18} />
+                    Bulk Edit ({selectedRecords.size})
+                  </button>
+                  <button
+                    onClick={() => handleBulkAction('delete')}
+                    className="btn btn-danger flex items-center gap-2"
+                  >
+                    <Trash2 size={18} />
+                    Delete Selected ({selectedRecords.size})
+                  </button>
+                </>
+              )}
+              <button
+                onClick={() => setDeleteModal({ open: true, record: null, type: 'all' })}
+                className="btn btn-danger flex items-center gap-2"
+              >
+                <Trash2 size={18} />
+                Clear All
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -224,6 +349,18 @@ export default function Attendance() {
             <thead>
               <tr className="border-b border-border">
                 <th className="text-left py-4 px-4 text-sm font-semibold text-text-secondary uppercase tracking-wide">
+                  <button
+                    onClick={toggleSelectAll}
+                    className="flex items-center gap-2 hover:text-text-primary"
+                  >
+                    {selectedRecords.size === filteredAttendance.length && filteredAttendance.length > 0 ? (
+                      <CheckSquare size={18} />
+                    ) : (
+                      <Square size={18} />
+                    )}
+                  </button>
+                </th>
+                <th className="text-left py-4 px-4 text-sm font-semibold text-text-secondary uppercase tracking-wide">
                   Student
                 </th>
                 <th className="text-left py-4 px-4 text-sm font-semibold text-text-secondary uppercase tracking-wide">
@@ -264,8 +401,22 @@ export default function Attendance() {
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.02 }}
-                      className="border-b border-border hover:bg-background transition-colors"
+                      className={`border-b border-border hover:bg-background transition-colors ${
+                        selectedRecords.has(record.id) ? 'bg-blue-50' : ''
+                      }`}
                     >
+                      <td className="py-4 px-4">
+                        <button
+                          onClick={() => toggleSelectRecord(record.id)}
+                          className="hover:text-text-primary"
+                        >
+                          {selectedRecords.has(record.id) ? (
+                            <CheckSquare size={18} className="text-blue-600" />
+                          ) : (
+                            <Square size={18} />
+                          )}
+                        </button>
+                      </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-semibold">
@@ -295,13 +446,22 @@ export default function Attendance() {
                         {new Date(record.timestamp).toLocaleString()}
                       </td>
                       <td className="py-4 px-4">
-                        <button
-                          onClick={() => setDeleteModal({ open: true, record, type: 'single' })}
-                          className="btn btn-danger text-xs py-1.5 px-3 flex items-center gap-1"
-                        >
-                          <Trash2 size={14} />
-                          Delete
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setEditModal({ open: true, record })}
+                            className="btn btn-secondary text-xs py-1.5 px-3 flex items-center gap-1"
+                          >
+                            <Edit2 size={14} />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => setDeleteModal({ open: true, record, type: 'single' })}
+                            className="btn btn-danger text-xs py-1.5 px-3 flex items-center gap-1"
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </motion.tr>
                   );
@@ -337,6 +497,132 @@ export default function Attendance() {
             </button>
             <button onClick={handleDelete} className="btn btn-danger">
               Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        isOpen={editModal.open}
+        onClose={() => setEditModal({ open: false, record: null })}
+        title="Edit Attendance Record"
+      >
+        {editModal.record && (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-2">Status</label>
+              <select
+                id="edit-status"
+                defaultValue={editModal.record.status}
+                className="input"
+              >
+                <option value="present">Present</option>
+                <option value="absent">Absent</option>
+                <option value="excused">Excused</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-2">Timestamp</label>
+              <input
+                type="datetime-local"
+                id="edit-timestamp"
+                defaultValue={editModal.record.timestamp ? new Date(editModal.record.timestamp).toISOString().slice(0, 16) : ''}
+                className="input"
+              />
+            </div>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setEditModal({ open: false, record: null })}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const status = document.getElementById('edit-status').value;
+                  const timestamp = document.getElementById('edit-timestamp').value;
+                  handleEdit({ status, timestamp: timestamp ? new Date(timestamp).toISOString() : editModal.record.timestamp });
+                }}
+                className="btn btn-primary"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Bulk Edit Modal */}
+      <Modal
+        isOpen={bulkActionModal.open && bulkActionModal.action === 'edit'}
+        onClose={() => {
+          setBulkActionModal({ open: false, action: null });
+          setBulkEditData('');
+        }}
+        title="Bulk Edit Attendance"
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-2">
+              Edit Data (JSON format)
+            </label>
+            <textarea
+              value={bulkEditData}
+              onChange={(e) => setBulkEditData(e.target.value)}
+              className="input min-h-[200px] font-mono text-sm"
+              placeholder='[{"id": "record_id", "status": "present", "timestamp": "2024-01-01T10:00:00"}]'
+            />
+            <p className="text-xs text-text-secondary mt-1">
+              Modify status and/or timestamp for selected records
+            </p>
+          </div>
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={() => {
+                setBulkActionModal({ open: false, action: null });
+                setBulkEditData('');
+              }}
+              className="btn btn-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                try {
+                  const updates = JSON.parse(bulkEditData);
+                  if (!Array.isArray(updates)) {
+                    showToast('Invalid format. Expected JSON array', 'error');
+                    return;
+                  }
+                  setBulkEditing(true);
+                  await bulkEditAttendance(updates);
+                  showToast(`${updates.length} records updated`, 'success');
+                  setBulkActionModal({ open: false, action: null });
+                  setBulkEditData('');
+                  setSelectedRecords(new Set());
+                  loadAttendance();
+                } catch (error) {
+                  console.error('Bulk edit error:', error);
+                  showToast(error.response?.data?.detail || 'Failed to bulk edit', 'error');
+                } finally {
+                  setBulkEditing(false);
+                }
+              }}
+              disabled={bulkEditing}
+              className="btn btn-primary"
+            >
+              {bulkEditing ? (
+                <>
+                  <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                  Updating...
+                </>
+              ) : (
+                <>
+                  <Upload size={18} className="mr-2" />
+                  Update
+                </>
+              )}
             </button>
           </div>
         </div>

@@ -1,29 +1,44 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Users } from 'lucide-react';
 import Card from '../components/Card';
 import WebcamCapture from '../components/WebcamCapture';
-import { recognizeFace, markAttendance } from '../api/api';
+import { recognizeFace, markAttendance, recognizeMultipleFaces } from '../api/api';
 import { useToast } from '../components/Toast';
 
 export default function Scan() {
   const [result, setResult] = useState(null);
+  const [multiResult, setMultiResult] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [marking, setMarking] = useState(false);
+  const [multiMode, setMultiMode] = useState(false);
   const { showToast } = useToast();
 
   const handleScan = async (imageData) => {
     setScanning(true);
     setResult(null);
+    setMultiResult(null);
     try {
-      const data = await recognizeFace(imageData);
-      setResult(data);
-      if (data.status === 'recognized') {
-        showToast(`Recognized: ${data.name}`, 'success');
-      } else if (data.status === 'no_face') {
-        showToast('No face detected. Please try again.', 'warning');
+      if (multiMode) {
+        const data = await recognizeMultipleFaces(imageData);
+        setMultiResult(data);
+        if (data.status === 'ok' && data.matches?.length > 0) {
+          showToast(`Recognized ${data.matches.length} face(s)`, 'success');
+        } else if (data.status === 'no_faces') {
+          showToast('No faces detected. Please try again.', 'warning');
+        } else {
+          showToast('Faces not recognized', 'error');
+        }
       } else {
-        showToast('Face not recognized', 'error');
+        const data = await recognizeFace(imageData);
+        setResult(data);
+        if (data.status === 'recognized') {
+          showToast(`Recognized: ${data.name}`, 'success');
+        } else if (data.status === 'no_face') {
+          showToast('No face detected. Please try again.', 'warning');
+        } else {
+          showToast('Face not recognized', 'error');
+        }
       }
     } catch (error) {
       console.error('Recognition error:', error);
@@ -34,13 +49,17 @@ export default function Scan() {
     }
   };
 
-  const handleMarkAttendance = async () => {
-    if (!result || result.status !== 'recognized') return;
+  const handleMarkAttendance = async (roll = null) => {
+    const targetRoll = roll || result?.roll;
+    if (!targetRoll) return;
     setMarking(true);
     try {
-      await markAttendance(result.roll);
-      showToast(`Attendance marked for ${result.name}`, 'success');
-      setResult(null);
+      await markAttendance(targetRoll);
+      const studentName = result?.name || multiResult?.matches?.find(m => m.roll === roll)?.name || 'Student';
+      showToast(`Attendance marked for ${studentName}`, 'success');
+      if (!roll) {
+        setResult(null);
+      }
     } catch (error) {
       console.error('Mark attendance error:', error);
       showToast(error.response?.data?.detail || 'Failed to mark attendance', 'error');
@@ -51,9 +70,22 @@ export default function Scan() {
 
   return (
     <div className="p-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-text-primary mb-2">Face Recognition Scanner</h1>
-        <p className="text-text-secondary">Position your face in the frame and scan</p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-text-primary mb-2">Face Recognition Scanner</h1>
+          <p className="text-text-secondary">Position your face in the frame and scan</p>
+        </div>
+        <button
+          onClick={() => {
+            setMultiMode(!multiMode);
+            setResult(null);
+            setMultiResult(null);
+          }}
+          className={`btn ${multiMode ? 'btn-primary' : 'btn-secondary'} flex items-center gap-2`}
+        >
+          <Users size={18} />
+          {multiMode ? 'Multi-Face Mode' : 'Single-Face Mode'}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -71,11 +103,61 @@ export default function Scan() {
           <div className="mb-6">
             <h3 className="text-xl font-semibold text-text-primary mb-1">Recognition Result</h3>
             <p className="text-sm text-text-secondary">
-              {scanning ? 'Processing...' : result ? 'Result' : 'Ready to scan'}
+              {scanning ? 'Processing...' : (multiResult || result) ? 'Result' : 'Ready to scan'}
             </p>
           </div>
           <div className="min-h-[300px] flex items-center justify-center">
-            {scanning ? (
+            {multiMode && multiResult?.matches?.length > 0 ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="w-full space-y-4"
+              >
+                <div className="text-center mb-4">
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-2">
+                    <Users size={32} className="text-green-600" />
+                  </div>
+                  <div className="text-lg font-semibold text-text-primary">
+                    {multiResult.matches.length} Face(s) Recognized
+                  </div>
+                </div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {multiResult.matches.map((match, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-background rounded-button flex items-center justify-between"
+                    >
+                      <div>
+                        <div className="font-medium text-text-primary">{match.name}</div>
+                        <div className="text-sm text-text-secondary">Roll: {match.roll}</div>
+                        <div className="text-xs text-text-tertiary">Confidence: {match.confidence}%</div>
+                      </div>
+                      <button
+                        onClick={() => handleMarkAttendance(match.roll)}
+                        disabled={marking}
+                        className="btn btn-success text-xs py-1.5 px-3"
+                      >
+                        Mark
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            ) : multiMode && multiResult?.status === 'no_faces' ? (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="text-center space-y-4"
+              >
+                <div className="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto">
+                  <AlertCircle size={32} className="text-yellow-600" />
+                </div>
+                <div>
+                  <div className="text-lg font-semibold text-text-primary mb-1">No Faces Detected</div>
+                  <p className="text-sm text-text-secondary">{multiResult.message || 'Please ensure faces are clearly visible'}</p>
+                </div>
+              </motion.div>
+            ) : scanning ? (
               <div className="text-center">
                 <div className="inline-block w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4" />
                 <p className="text-text-secondary">Processing face recognition...</p>

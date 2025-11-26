@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { Users, UserCheck, UserX, TrendingUp, CheckCircle, Camera, Database, Wifi, Brain, Scan } from 'lucide-react';
+import { Users, UserCheck, UserX, TrendingUp, CheckCircle, Camera, Database, Wifi, Brain, Scan, AlertCircle, Clock, Zap, Activity, Bell } from 'lucide-react';
 import Card from '../components/Card';
-import { getAnalysisSummary, getAnalysisInsights, healthCheck } from '../api/api';
+import { getAnalysisSummary, getAnalysisInsights, healthCheck, getAttendancePrediction, getAlerts, getProductivityIndex, getCameraStatus, getAttendanceClustering } from '../api/api';
 import { useToast } from '../components/Toast';
 
 export default function Dashboard() {
@@ -10,6 +10,11 @@ export default function Dashboard() {
   const [insights, setInsights] = useState(null);
   const [loading, setLoading] = useState(true);
   const [systemStatus, setSystemStatus] = useState(null);
+  const [prediction, setPrediction] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [productivity, setProductivity] = useState(null);
+  const [cameraStatus, setCameraStatus] = useState(null);
+  const [clustering, setClustering] = useState(null);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -24,12 +29,22 @@ export default function Dashboard() {
 
   const loadData = async () => {
     try {
-      const [summary, insightsData] = await Promise.all([
+      const [summary, insightsData, predictionData, alertsData, productivityData, cameraData, clusteringData] = await Promise.all([
         getAnalysisSummary(),
-        getAnalysisInsights().catch(() => null)
+        getAnalysisInsights().catch(() => null),
+        getAttendancePrediction().catch(() => null),
+        getAlerts(10).catch(() => []),
+        getProductivityIndex().catch(() => null),
+        getCameraStatus().catch(() => null),
+        getAttendanceClustering().catch(() => null)
       ]);
       setData(summary);
       setInsights(insightsData);
+      setPrediction(predictionData);
+      setAlerts(alertsData);
+      setProductivity(productivityData);
+      setCameraStatus(cameraData);
+      setClustering(clusteringData);
     } catch (error) {
       console.error('Error loading dashboard:', error);
       showToast('Failed to load dashboard data', 'error');
@@ -81,13 +96,6 @@ export default function Dashboard() {
       badgeColor: 'bg-green-100 text-green-700',
     },
     {
-      label: 'Total Scans',
-      value: data?.total_scans || 0,
-      icon: Scan,
-      badge: 'Records',
-      badgeColor: 'bg-blue-100 text-blue-700',
-    },
-    {
       label: 'Present Today',
       value: data?.present_today || 0,
       icon: UserCheck,
@@ -102,11 +110,25 @@ export default function Dashboard() {
       badgeColor: 'bg-red-100 text-red-700',
     },
     {
+      label: 'Late Today',
+      value: data?.late_today || 0,
+      icon: Clock,
+      badge: 'Late',
+      badgeColor: 'bg-yellow-100 text-yellow-700',
+    },
+    {
       label: 'Attendance Rate',
       value: `${data?.attendance_rate_today || 0}%`,
       icon: TrendingUp,
       badge: 'Today',
       badgeColor: 'bg-green-100 text-green-700',
+    },
+    {
+      label: 'Productivity',
+      value: `${productivity?.overall_productivity?.toFixed(1) || 0}`,
+      icon: Zap,
+      badge: productivity?.trend || 'stable',
+      badgeColor: productivity?.trend === 'increasing' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700',
     },
   ];
 
@@ -120,7 +142,7 @@ export default function Dashboard() {
   return (
     <div className="p-8 space-y-8">
       {/* Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-6">
         {metrics.map((metric) => {
           const Icon = metric.icon;
           return (
@@ -165,6 +187,41 @@ export default function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
         </Card>
+
+        {/* Predictive Chart */}
+        {prediction && (
+          <Card>
+            <div className="mb-6">
+              <h3 className="text-xl font-semibold text-text-primary mb-1">Predictive Forecast</h3>
+              <p className="text-sm text-text-secondary">Tomorrow's prediction</p>
+            </div>
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="text-4xl font-bold text-text-primary mb-2">
+                  {prediction.tomorrow_prediction}
+                </div>
+                <div className="text-sm text-text-secondary">
+                  Expected Present ({prediction.prediction_percentage}%)
+                </div>
+                <div className="text-xs text-text-tertiary mt-1">
+                  Confidence: {(prediction.confidence * 100).toFixed(0)}%
+                </div>
+              </div>
+              {prediction.risk_groups?.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-border">
+                  <div className="text-sm font-medium text-text-primary mb-2">Risk Groups ({prediction.risk_groups.length})</div>
+                  <div className="space-y-2">
+                    {prediction.risk_groups.slice(0, 3).map((risk, idx) => (
+                      <div key={idx} className="text-xs text-text-secondary">
+                        {risk.name} (Roll {risk.roll}): {risk.recent_rate}% attendance
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Department Bars */}
         <Card>
@@ -240,14 +297,16 @@ export default function Dashboard() {
         <Card>
           <div className="mb-6">
             <h3 className="text-xl font-semibold text-text-primary mb-1">System Status</h3>
-            <p className="text-sm text-text-secondary">System health monitoring</p>
+            <p className="text-sm text-text-secondary">Real-time monitoring</p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             {[
               { icon: CheckCircle, label: 'Recognition Model', value: sysStatus.camera_status === 'online' ? 'Operational' : 'Offline', status: sysStatus.camera_status === 'online' ? 'success' : 'warning' },
-              { icon: Camera, label: 'Camera Health', value: sysStatus.camera_status || 'Ready', status: sysStatus.camera_status === 'online' ? 'success' : 'warning' },
-              { icon: Database, label: 'Database Status', value: sysStatus.database_status || 'OK', status: 'success' },
+              { icon: Camera, label: 'Camera', value: cameraStatus?.camera_available ? 'Available' : 'Unavailable', status: cameraStatus?.camera_available ? 'success' : 'warning' },
+              { icon: Database, label: 'Database', value: sysStatus.database_status || 'OK', status: 'success' },
               { icon: Wifi, label: 'Response Time', value: `${sysStatus.response_time_ms || 0}ms`, status: 'success' },
+              { icon: Activity, label: 'FPS', value: cameraStatus?.fps ? `${cameraStatus.fps.toFixed(1)}` : 'N/A', status: cameraStatus?.fps > 20 ? 'success' : 'warning' },
+              { icon: Zap, label: 'Detection', value: cameraStatus?.detection_quality || 'Unknown', status: cameraStatus?.detection_quality === 'high' ? 'success' : 'warning' },
             ].map((item) => {
               const Icon = item.icon;
               return (
@@ -272,6 +331,124 @@ export default function Dashboard() {
             </div>
           )}
         </Card>
+
+        {/* Alerts Panel */}
+        <Card>
+          <div className="mb-6 flex items-center gap-2">
+            <Bell size={20} className="text-purple-600" />
+            <div>
+              <h3 className="text-xl font-semibold text-text-primary mb-1">Smart Alerts</h3>
+              <p className="text-sm text-text-secondary">Recent notifications</p>
+            </div>
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {alerts.length > 0 ? (
+              alerts.map((alert) => (
+                <div
+                  key={alert.id}
+                  className={`p-3 rounded-button border-l-4 ${
+                    alert.severity === 'error' ? 'bg-red-50 border-red-500' :
+                    alert.severity === 'warning' ? 'bg-yellow-50 border-yellow-500' :
+                    'bg-blue-50 border-blue-500'
+                  }`}
+                >
+                  <div className="text-sm font-medium text-text-primary">{alert.message}</div>
+                  <div className="text-xs text-text-secondary mt-1">
+                    {new Date(alert.timestamp).toLocaleString()}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="text-center py-4 text-text-secondary">No alerts</div>
+            )}
+          </div>
+        </Card>
+
+        {/* Productivity Meter */}
+        {productivity && (
+          <Card>
+            <div className="mb-6">
+              <h3 className="text-xl font-semibold text-text-primary mb-1">Productivity Index</h3>
+              <p className="text-sm text-text-secondary">Overall performance metric</p>
+            </div>
+            <div className="space-y-4">
+              <div className="text-center">
+                <div className="text-5xl font-bold text-text-primary mb-2">
+                  {productivity.overall_productivity.toFixed(1)}
+                </div>
+                <div className="text-sm text-text-secondary">out of {productivity.max_score}</div>
+                <div className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium mt-2 ${
+                  productivity.trend === 'increasing' ? 'bg-green-100 text-green-700' :
+                  productivity.trend === 'decreasing' ? 'bg-red-100 text-red-700' :
+                  'bg-blue-100 text-blue-700'
+                }`}>
+                  Trend: {productivity.trend}
+                </div>
+              </div>
+              <div className="w-full bg-background rounded-full h-3">
+                <div
+                  className="bg-gradient-to-r from-purple-500 to-purple-600 h-3 rounded-full transition-all duration-500"
+                  style={{ width: `${productivity.overall_productivity}%` }}
+                />
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Attendance Clustering - Bubble Chart */}
+        {clustering && clustering.clusters?.length > 0 && (
+          <Card>
+            <div className="mb-6">
+              <h3 className="text-xl font-semibold text-text-primary mb-1">Performance Clusters</h3>
+              <p className="text-sm text-text-secondary">KMeans analysis visualization</p>
+            </div>
+            <div className="space-y-4">
+              {/* Cluster bars */}
+              {clustering.clusters.map((cluster) => (
+                <div key={cluster.name} className="p-3 bg-background rounded-button">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-sm font-medium text-text-primary capitalize">{cluster.name} Performers</div>
+                    <div className="text-sm text-text-secondary">{cluster.count} students</div>
+                  </div>
+                  <div className="w-full bg-background-secondary rounded-full h-2">
+                    <div
+                      className={`h-2 rounded-full ${
+                        cluster.name === 'high' ? 'bg-green-500' :
+                        cluster.name === 'medium' ? 'bg-yellow-500' :
+                        'bg-red-500'
+                      }`}
+                      style={{ width: `${(cluster.count / (data?.total_students || 1)) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+              {/* Bubble chart representation */}
+              <div className="mt-6 p-4 bg-background rounded-button">
+                <div className="text-xs text-text-secondary mb-3 text-center">Cluster Distribution</div>
+                <div className="flex items-center justify-center gap-4">
+                  {clustering.clusters.map((cluster) => {
+                    const size = Math.max(40, (cluster.count / (data?.total_students || 1)) * 200);
+                    return (
+                      <div key={cluster.name} className="flex flex-col items-center gap-2">
+                        <div
+                          className={`rounded-full flex items-center justify-center text-white font-bold ${
+                            cluster.name === 'high' ? 'bg-green-500' :
+                            cluster.name === 'medium' ? 'bg-yellow-500' :
+                            'bg-red-500'
+                          }`}
+                          style={{ width: `${size}px`, height: `${size}px` }}
+                        >
+                          {cluster.count}
+                        </div>
+                        <div className="text-xs text-text-secondary capitalize">{cluster.name}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
 
       {/* AI Insights Card */}
