@@ -57,15 +57,16 @@ export const markManualAttendance = async (roll, status, timestamp = null) => {
 };
 
 // Delete student
-export const deleteStudent = async (roll, adminKey = 'changeme') => {
+export const deleteStudent = async (roll, adminKey = null) => {
+  const headers = {};
+  const storedKey = localStorage.getItem('adminKey');
+  if (adminKey || storedKey) {
+    headers['x-admin-key'] = adminKey || storedKey;
+  }
   const response = await api.post('/delete_student', {
     roll,
     confirm: true,
-  }, {
-    headers: {
-      'x-admin-key': adminKey,
-    },
-  });
+  }, { headers });
   return response.data;
 };
 
@@ -98,6 +99,142 @@ export const deleteAllAttendance = async () => {
 // Health check
 export const healthCheck = async () => {
   const response = await api.get('/health');
+  return response.data;
+};
+
+// Predictive Attendance Forecasting
+export const getAttendancePrediction = async () => {
+  const response = await api.get('/analysis/prediction');
+  return response.data;
+};
+
+// Smart Alerts System
+export const getAlerts = async (limit = 20) => {
+  const response = await api.get('/alerts', { params: { limit } });
+  return response.data;
+};
+
+export const clearAlerts = async (adminKey = null) => {
+  const headers = {};
+  const storedKey = localStorage.getItem('adminKey');
+  if (adminKey || storedKey) {
+    headers['x-admin-key'] = adminKey || storedKey;
+  }
+  const response = await api.post('/alerts/clear', {}, { headers });
+  return response.data;
+};
+
+// Student Analytics
+export const getStudentAnalytics = async (roll) => {
+  const response = await api.get(`/students/${roll}/analytics`);
+  return response.data;
+};
+
+// Multi-Face Recognition
+export const recognizeMultipleFaces = async (imageBase64) => {
+  const response = await api.post('/recognize/multi', {
+    image_base64: imageBase64,
+  });
+  return response.data;
+};
+
+// Camera Status
+export const getCameraStatus = async () => {
+  const response = await api.get('/system/camera_status');
+  return response.data;
+};
+
+// Database Cleanup
+export const cleanupDatabase = async (adminKey = null) => {
+  const headers = {};
+  const storedKey = localStorage.getItem('adminKey');
+  if (adminKey || storedKey) {
+    headers['x-admin-key'] = adminKey || storedKey;
+  }
+  const response = await api.post('/maintenance/cleanup', {}, { headers });
+  return response.data;
+};
+
+// Student ID Card
+export const getStudentIdCard = async (roll) => {
+  const response = await api.get(`/students/${roll}/idcard`, {
+    responseType: 'blob'
+  });
+  return response.data;
+};
+
+// Productivity Index
+export const getProductivityIndex = async () => {
+  const response = await api.get('/analysis/productivity');
+  return response.data;
+};
+
+// Timeline
+export const getTimeline = async (limit = 50) => {
+  const response = await api.get('/timeline', { params: { limit } });
+  return response.data;
+};
+
+// User Role
+export const getUserRole = async (adminKey = null) => {
+  const headers = {};
+  if (adminKey) {
+    headers['x-admin-key'] = adminKey;
+  }
+  const response = await api.get('/auth/role', { headers });
+  return response.data;
+};
+
+// Bulk Upload Students
+export const bulkUploadStudents = async (studentsData, adminKey = null) => {
+  const headers = {};
+  const storedKey = localStorage.getItem('adminKey');
+  if (adminKey || storedKey) {
+    headers['x-admin-key'] = adminKey || storedKey;
+  }
+  const response = await api.post('/students/bulk_upload', studentsData, { headers });
+  return response.data;
+};
+
+// Bulk Edit Attendance
+export const bulkEditAttendance = async (updates, adminKey = null) => {
+  const headers = {};
+  const storedKey = localStorage.getItem('adminKey');
+  if (adminKey || storedKey) {
+    headers['x-admin-key'] = adminKey || storedKey;
+  }
+  const response = await api.post('/attendance/bulk_edit', updates, { headers });
+  return response.data;
+};
+
+// Attendance Clustering
+export const getAttendanceClustering = async () => {
+  const response = await api.get('/analysis/clustering');
+  return response.data;
+};
+
+// Student Badges
+export const getStudentBadges = async (roll) => {
+  const response = await api.get(`/students/${roll}/badges`);
+  return response.data;
+};
+
+// Update Attendance Record
+export const updateAttendanceRecord = async (recordId, updates, adminKey = null) => {
+  const headers = {};
+  const storedKey = localStorage.getItem('adminKey');
+  if (adminKey || storedKey) {
+    headers['x-admin-key'] = adminKey || storedKey;
+  }
+  const response = await api.patch(`/attendance/${recordId}`, updates, { headers });
+  return response.data;
+};
+
+// Export Attendance
+export const exportAttendance = async (format = 'csv') => {
+  const response = await api.get(`/attendance/export?format=${format}`, {
+    responseType: 'blob'
+  });
   return response.data;
 };
 
