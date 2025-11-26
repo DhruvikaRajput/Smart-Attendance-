@@ -1,0 +1,63 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-text-primary;
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-card rounded-card shadow-card p-6 transition-all duration-300 hover:shadow-card-hover;
+  }
+  
+  .btn {
+    @apply px-6 py-2.5 rounded-button font-medium text-sm transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  
+  .btn-primary {
+    @apply bg-text-primary text-white hover:bg-black hover:-translate-y-0.5;
+  }
+  
+  .btn-secondary {
+    @apply bg-background text-text-primary border border-border hover:bg-card;
+  }
+  
+  .btn-danger {
+    @apply bg-red-500 text-white hover:bg-red-600;
+  }
+  
+  .btn-success {
+    @apply bg-green-500 text-white hover:bg-green-600;
+  }
+  
+  .input {
+    @apply w-full px-4 py-2.5 border border-border rounded-button bg-card text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-opacity-20 transition-all;
+  }
+  
+  .status-chip {
+    @apply px-3 py-1 rounded-full text-xs font-medium;
+  }
+  
+  .status-chip.present {
+    @apply bg-green-100 text-green-700;
+  }
+  
+  .status-chip.absent {
+    @apply bg-red-100 text-red-700;
+  }
+  
+  .status-chip.excused {
+    @apply bg-gray-100 text-gray-700;
+  }
+}
+
