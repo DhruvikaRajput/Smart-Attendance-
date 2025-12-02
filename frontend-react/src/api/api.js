@@ -39,9 +39,9 @@ export const recognizeFace = async (imageBase64) => {
 };
 
 // Mark attendance (auto)
-export const markAttendance = async (roll) => {
+export const markAttendance = async (studentId) => {
   const response = await api.post('/attendance/mark', {
-    roll,
+    student_id: studentId,
   });
   return response.data;
 };
