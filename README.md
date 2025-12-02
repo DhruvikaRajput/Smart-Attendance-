@@ -31,14 +31,14 @@ cd "main project"
 ### 2. Create Virtual Environment
 
 ```bash
-python -m venv .venv
+python -m venv venv
 ```
 
 ### 3. Activate Virtual Environment
 
 **Windows:**
 ```bash
-.venv\Scripts\activate
+venv\Scripts\activate
 ```
 
 **macOS/Linux:**
