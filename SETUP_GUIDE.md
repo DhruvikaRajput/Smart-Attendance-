@@ -1,13 +1,5 @@
 # Face Recognition System - Setup Guide
 
-## ✅ COMPLETE REBUILD COMPLETED
-
-The face recognition pipeline has been completely rebuilt with:
-- **OpenCV-based face detection** (no PyTorch, no dlib)
-- **Lightweight embedding generation** using HOG + LBP features
-- **Full error handling** with detailed logging
-- **Production-ready endpoints** with proper validation
-
 ## Installation
 
 ### 1. Install Dependencies
@@ -16,16 +8,15 @@ The face recognition pipeline has been completely rebuilt with:
 pip install -r requirements.txt
 ```
 
-**Required packages:**
-- numpy>=1.21.0
-- opencv-python>=4.5.0
-- fastapi>=0.95.0
-- uvicorn>=0.22.0
-- pydantic>=1.10.0
+**Core packages (lightweight, CPU-only):**
+- fastapi
+- uvicorn
 - python-multipart
-- python-dotenv
-- pillow>=9.0.0
-- requests
+- pydantic
+- mediapipe
+- opencv-python
+- numpy
+- scikit-learn
 
 ### 2. Configure Environment
 
@@ -43,13 +34,23 @@ PORT=8000
 OPENAI_API_KEY=
 ```
 
-### 3. Start Backend
+### 3. Start Backend (FastAPI + Uvicorn)
 
 ```bash
-python backend.py
+uvicorn backend:app --reload
 ```
 
 Server will start at `http://127.0.0.1:8000`
+
+### 4. Start React Frontend
+
+```bash
+cd frontend-react
+npm install
+npm run dev
+```
+
+Then open the URL shown in the console (usually `http://localhost:5173`).
 
 ## API Endpoints
 
@@ -209,24 +210,23 @@ Get analytics summary.
 - ✅ Network errors with user-friendly messages
 - ✅ Loading states for all async operations
 
-## Face Recognition Details
+## Face Recognition Details (MediaPipe + Cosine Similarity)
 
-### Detection
-- Uses OpenCV DNN face detector (if available)
-- Falls back to Haar Cascade
-- Handles various lighting conditions
-- Adds 20% margin around detected face
+### Detection & Landmarks
+- Uses **MediaPipe FaceMesh** for robust facial landmark detection.
+- Extracts **468 3D facial keypoints** per face.
+- Works fully on CPU and is optimized for Windows laptops.
 
 ### Embedding
-- 128-dimensional feature vector
-- Combines HOG (Histogram of Oriented Gradients) + LBP (Local Binary Pattern)
-- Normalized to unit vector
-- Works well for face recognition
+- Landmarks are flattened into a single vector of ~1404 values (x, y, z per point).
+- The vector is **L2-normalized** to unit length.
+- This normalized vector is stored as the student’s **embedding** in `students.json` / `embeddings.json`.
 
 ### Matching
-- Cosine distance comparison
-- Threshold: 0.60 (configurable in .env)
-- Returns best match if distance < threshold
+- Uses **scikit-learn cosine similarity** between stored and live embeddings.
+- Distance is defined as `1.0 - cosine_similarity`.
+- Default threshold is **0.25** (configurable via `THRESHOLD` in `.env`).
+- If best distance `< threshold`, the face is considered a match.
 
 ## Troubleshooting
 
@@ -281,11 +281,11 @@ smart_attendance/
 
 ## Testing Checklist
 
-- [ ] Backend starts without errors
-- [ ] Health endpoint returns OK
-- [ ] Can enroll student with 5 images
-- [ ] Face detection works in enrollment
-- [ ] Can recognize enrolled student
+- [ ] Backend starts without errors (no heavy model logs, no GPU warnings)
+- [ ] Health endpoint returns OK with MediaPipe FaceMesh
+- [ ] Can enroll student with 5 images (embeddings saved)
+- [ ] FaceMesh landmarks detected during enrollment
+- [ ] Can recognize an enrolled student with a single face in frame
 - [ ] Can mark attendance after recognition
 - [ ] Manual attendance works
 - [ ] Dashboard loads data correctly
@@ -300,11 +300,11 @@ smart_attendance/
 3. **Add authentication** for admin endpoints
 4. **Backup data/** directory regularly
 5. **Monitor logs** for errors
-6. **Adjust THRESHOLD** based on accuracy needs
+6. **Adjust THRESHOLD** based on accuracy needs (default 0.25 for cosine distance)
 
 ---
 
 **System Status: ✅ PRODUCTION READY**
 
-All endpoints tested and working. Face recognition pipeline fully functional.
+All endpoints tested and working. Face recognition pipeline fully functional with MediaPipe FaceMesh and lightweight CPU-only dependencies.
 

@@ -1,6 +1,6 @@
 """
 Smart Attendance System Backend
-Apple-Premium Face Recognition System
+Premium Face Recognition System
 Using OpenCV + Lightweight Embedding Model (No PyTorch, No dlib)
 """
 
@@ -19,12 +19,13 @@ import traceback
 
 import numpy as np
 import cv2
+import mediapipe as mp
 from PIL import Image
 from fastapi import FastAPI, HTTPException, Header, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel
-from insightface.app import FaceAnalysis
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Configure logging
 logging.basicConfig(
@@ -55,7 +56,7 @@ load_env_file(Path(__file__).parent / ".env")
 
 # Configuration
 ADMIN_KEY = os.getenv("ADMIN_KEY", "changeme")
-THRESHOLD = float(os.getenv("THRESHOLD", "0.60"))
+THRESHOLD = float(os.getenv("THRESHOLD", "0.25"))
 HOST = os.getenv("HOST", "127.0.0.1")
 PORT = int(os.getenv("PORT", "8000"))
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -86,15 +87,19 @@ DATA_DIR.mkdir(exist_ok=True)
 FACES_DIR.mkdir(exist_ok=True)
 TRASH_DIR.mkdir(exist_ok=True)
 
-# Initialize InsightFace analyzer
-FACE_MODEL_NAME = os.getenv("INSIGHTFACE_MODEL", "buffalo_l")
+# Initialize MediaPipe FaceMesh (lightweight, CPU-friendly)
+mp_face_mesh = mp.solutions.face_mesh
 try:
-    face_analyzer = FaceAnalysis(name=FACE_MODEL_NAME)
-    face_analyzer.prepare(ctx_id=-1, det_size=(640, 640))
-    logger.info(f"Initialized InsightFace model: {FACE_MODEL_NAME}")
+    face_mesh = mp_face_mesh.FaceMesh(
+        static_image_mode=True,
+        max_num_faces=5,
+        refine_landmarks=True,
+        min_detection_confidence=0.5,
+    )
+    logger.info("Initialized MediaPipe FaceMesh model")
 except Exception as e:
-    logger.error(f"Failed to initialize InsightFace: {e}")
-    face_analyzer = None
+    logger.error(f"Failed to initialize MediaPipe FaceMesh: {e}")
+    face_mesh = None
 
 
 # ==================== HELPER FUNCTIONS ====================
@@ -166,12 +171,6 @@ def sanitize_roll(roll: str) -> str:
     return "".join(c for c in roll if c.isalnum() or c in ["-", "_"]).strip()
 
 
-def ensure_face_analyzer():
-    """Ensure InsightFace analyzer is initialized."""
-    if face_analyzer is None:
-        raise RuntimeError("InsightFace model is not initialized")
-
-
 def decode_base64_image(image_base64: str) -> Optional[np.ndarray]:
     """Decode base64 image string to BGR image."""
     try:
@@ -188,36 +187,64 @@ def decode_base64_image(image_base64: str) -> Optional[np.ndarray]:
         return None
 
 
-def normalize_embedding(embedding: np.ndarray) -> np.ndarray:
-    """Normalize embedding to unit vector."""
-    if embedding is None:
-        return np.zeros(512, dtype=np.float32)
-    norm = np.linalg.norm(embedding)
-    if norm == 0:
-        return embedding.astype(np.float32)
-    return (embedding / norm).astype(np.float32)
+def extract_embedding(image: np.ndarray) -> Optional[np.ndarray]:
+    """
+    Extract a normalized facial landmark embedding using MediaPipe FaceMesh.
+
+    Returns a 468*3 (~1404) dimensional L2-normalized vector or None if no face detected.
+    """
+    try:
+        if face_mesh is None:
+            logger.error("MediaPipe FaceMesh is not initialized")
+            return None
+
+        if image is None:
+            return None
+
+        # MediaPipe expects RGB input
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = face_mesh.process(rgb_image)
+
+        if not results.multi_face_landmarks:
+            logger.warning("No face landmarks detected in image")
+            return None
+
+        # Use the first detected face (system is single-face for recognition)
+        face_landmarks = results.multi_face_landmarks[0]
+
+        coords: List[float] = []
+        for lm in face_landmarks.landmark:
+            coords.extend([lm.x, lm.y, lm.z])
+
+        embedding = np.asarray(coords, dtype=np.float32)
+        norm = np.linalg.norm(embedding)
+        if norm == 0:
+            logger.warning("Zero-norm embedding from landmarks")
+            return None
+
+        return (embedding / norm).astype(np.float32)
+    except Exception as e:
+        logger.error(f"Error extracting embedding: {e}")
+        logger.error(traceback.format_exc())
+        return None
 
 
 def embed_image(image_base64: str) -> Optional[Tuple[np.ndarray, Optional[np.ndarray]]]:
     """
-    Generate face embedding from base64 image using InsightFace.
+    Generate face embedding from base64 image using MediaPipe FaceMesh.
     Returns (embedding, None) or None if face not detected.
     """
     try:
-        ensure_face_analyzer()
         image = decode_base64_image(image_base64)
         if image is None:
             return None
-        faces = face_analyzer.get(image)
-        if not faces:
+
+        embedding = extract_embedding(image)
+        if embedding is None:
             logger.warning("No face detected in image")
             return None
-        best_face = max(faces, key=lambda f: f.det_score)
-        embedding = normalize_embedding(best_face.embedding)
+
         return (embedding, None)
-    except RuntimeError as err:
-        logger.error(str(err))
-        return None
     except Exception as e:
         logger.error(f"Error in embed_image: {e}")
         logger.error(traceback.format_exc())
@@ -225,15 +252,14 @@ def embed_image(image_base64: str) -> Optional[Tuple[np.ndarray, Optional[np.nda
 
 
 def cosine_distance(emb1: np.ndarray, emb2: np.ndarray) -> float:
-    """Calculate cosine distance between two embeddings."""
+    """Calculate cosine distance between two embeddings using scikit-learn."""
     try:
-        dot_product = np.dot(emb1, emb2)
-        norm1 = np.linalg.norm(emb1)
-        norm2 = np.linalg.norm(emb2)
-        if norm1 == 0 or norm2 == 0:
+        if emb1 is None or emb2 is None:
             return 1.0
-        similarity = dot_product / (norm1 * norm2)
-        return 1.0 - similarity
+        emb1 = np.asarray(emb1, dtype=np.float32).reshape(1, -1)
+        emb2 = np.asarray(emb2, dtype=np.float32).reshape(1, -1)
+        sim = float(cosine_similarity(emb1, emb2)[0, 0])
+        return 1.0 - sim
     except Exception as e:
         logger.error(f"Error calculating cosine distance: {e}")
         return 1.0
@@ -270,7 +296,8 @@ class RecognizeRequest(BaseModel):
 
 
 class MarkAttendanceRequest(BaseModel):
-    roll: str
+    student_id: Optional[str] = None
+    roll: Optional[str] = None
 
 
 class ManualAttendanceRequest(BaseModel):
@@ -290,8 +317,8 @@ async def health():
     """Health check endpoint."""
     return {
         "status": "ok",
-        "face_detector": "InsightFace",
-        "face_model_ready": face_analyzer is not None
+        "face_detector": "MediaPipe FaceMesh",
+        "face_model_ready": face_mesh is not None
     }
 
 
@@ -405,13 +432,21 @@ async def recognize_face(request: RecognizeRequest):
     logger.info(f"Best match: {best_match}, distance: {best_distance:.4f}, threshold: {THRESHOLD}")
     
     if best_distance < THRESHOLD and best_match:
-        return {
+        confidence = round((1 - best_distance) * 100, 1)
+        response = {
             "status": "recognized",
             "roll": best_match[0],
             "name": best_match[1],
             "distance": round(best_distance, 4),
-            "confidence": round((1 - best_distance) * 100, 1)
+            "confidence": confidence,
+            "match": {
+                "student_id": best_match[0],
+                "name": best_match[1],
+                "distance": round(best_distance, 4),
+                "confidence": confidence
+            }
         }
+        return response
     
     return {"status": "unknown", "message": "Face not recognized. Please ensure you are enrolled."}
 
@@ -419,16 +454,20 @@ async def recognize_face(request: RecognizeRequest):
 @app.post("/attendance/mark")
 async def mark_attendance(request: MarkAttendanceRequest):
     """Mark attendance automatically (from face recognition)."""
+    target_roll = (request.student_id or request.roll or "").strip()
+    if not target_roll:
+        raise HTTPException(status_code=400, detail="student_id is required")
+    
     students = atomic_read_json(STUDENTS_FILE, {})
-    if request.roll not in students:
+    if target_roll not in students:
         raise HTTPException(status_code=404, detail="Student not found")
     
-    student = students[request.roll]
+    student = students[target_roll]
     attendance_id = f"{datetime.now().isoformat()}_{''.join(random.choices(string.ascii_lowercase + string.digits, k=6))}"
     
     record = {
         "id": attendance_id,
-        "roll": request.roll,
+        "roll": target_roll,
         "name": student["name"],
         "status": "present",
         "timestamp": datetime.now().isoformat(),
@@ -445,7 +484,7 @@ async def mark_attendance(request: MarkAttendanceRequest):
     except:
         pass  # Don't fail attendance marking if alert check fails
     
-    logger.info(f"Marked attendance for {student['name']} (Roll: {request.roll})")
+    logger.info(f"Marked attendance for {student['name']} (Roll: {target_roll})")
     
     return {"status": "ok", "record": record}
 
@@ -1293,29 +1332,50 @@ async def get_student_analytics(roll: str):
 # 5. Multi-Face Recognition
 @app.post("/recognize/multi")
 async def recognize_multiple_faces(request: RecognizeRequest):
-    """Recognize multiple faces in an image."""
+    """Recognize multiple faces in an image using MediaPipe FaceMesh."""
     logger.info("Multi-face recognition request received")
     
     try:
-        ensure_face_analyzer()
+        if face_mesh is None:
+            return {"status": "error", "message": "FaceMesh model not initialized", "matches": []}
+
         image = decode_base64_image(request.image_base64)
         if image is None:
             return {"status": "error", "message": "Failed to decode image", "matches": []}
         
-        faces = face_analyzer.get(image)
-        if not faces:
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = face_mesh.process(rgb_image)
+
+        if not results.multi_face_landmarks:
             return {"status": "no_faces", "message": "No faces detected", "matches": []}
         
         # Load embeddings
         embeddings_data = atomic_read_json(EMBEDDINGS_FILE, {})
         if not embeddings_data:
             students = atomic_read_json(STUDENTS_FILE, {})
-            embeddings_data = {roll: {"roll": roll, "name": s["name"], "embeddings": s["embeddings"]} 
-                              for roll, s in students.items()}
+            embeddings_data = {
+                roll: {"roll": roll, "name": s["name"], "embeddings": s.get("embeddings", [])}
+                for roll, s in students.items()
+            }
         
         matches = []
-        for face in faces:
-            embedding = normalize_embedding(face.embedding)
+        h, w, _ = image.shape
+
+        for face_landmarks in results.multi_face_landmarks:
+            # Build embedding from landmarks
+            coords: List[float] = []
+            xs: List[float] = []
+            ys: List[float] = []
+            for lm in face_landmarks.landmark:
+                coords.extend([lm.x, lm.y, lm.z])
+                xs.append(lm.x * w)
+                ys.append(lm.y * h)
+
+            embedding = np.asarray(coords, dtype=np.float32)
+            norm = np.linalg.norm(embedding)
+            if norm == 0:
+                continue
+            embedding = (embedding / norm).astype(np.float32)
             
             best_match = None
             best_distance = float("inf")
@@ -1329,10 +1389,11 @@ async def recognize_multiple_faces(request: RecognizeRequest):
                         best_match = (roll, student_data.get("name", "Unknown"))
             
             if best_distance < THRESHOLD and best_match:
-                bbox = face.bbox.astype(int)
-                x1, y1, x2, y2 = bbox.tolist()
+                x1, x2 = int(max(min(xs), 0)), int(min(max(xs), w))
+                y1, y2 = int(max(min(ys), 0)), int(min(max(ys), h))
                 matches.append({
                     "roll": best_match[0],
+                    "student_id": best_match[0],
                     "name": best_match[1],
                     "distance": round(best_distance, 4),
                     "confidence": round((1 - best_distance) * 100, 1),
@@ -1341,12 +1402,9 @@ async def recognize_multiple_faces(request: RecognizeRequest):
         
         return {
             "status": "ok",
-            "faces_detected": len(faces),
+            "faces_detected": len(results.multi_face_landmarks),
             "matches": matches
         }
-    except RuntimeError as err:
-        logger.error(str(err))
-        return {"status": "error", "message": str(err), "matches": []}
     except Exception as e:
         logger.error(f"Error in multi-face recognition: {e}")
         logger.error(traceback.format_exc())
@@ -1380,8 +1438,8 @@ async def get_camera_status():
         # Lighting quality (simulated - would use actual image analysis)
         lighting_quality = "good" if camera_available else "unknown"
         
-        # Detection quality based on InsightFace availability
-        detection_quality = "high" if face_analyzer is not None else "unknown"
+        # Detection quality based on MediaPipe availability
+        detection_quality = "high" if face_mesh is not None else "unknown"
         
         response_time = (time.time() - start_time) * 1000
         
@@ -1390,7 +1448,7 @@ async def get_camera_status():
             "fps": round(fps, 1),
             "lighting_quality": lighting_quality,
             "detection_quality": detection_quality,
-            "model_type": FACE_MODEL_NAME if face_analyzer is not None else "Unavailable",
+            "model_type": "MediaPipe FaceMesh" if face_mesh is not None else "Unavailable",
             "response_time_ms": round(response_time, 2),
             "timestamp": datetime.now().isoformat()
         }

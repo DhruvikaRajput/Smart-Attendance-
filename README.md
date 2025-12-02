@@ -1,11 +1,11 @@
 # Smart Attendance System
 
-A premium, Apple-inspired Smart Attendance System with CPU-based face recognition using FaceNet PyTorch.
+A premium Smart Attendance System with face recognition using FaceNet PyTorch.
 
 ## Features
 
-- ✨ **Apple-Premium UI** - Clean, minimal, professional interface
-- 👤 **Face Recognition** - CPU-based face recognition using facenet-pytorch
+- ✨ **Premium UI** - Clean, minimal, professional interface
+- 👤 **Face Recognition** - face recognition using facenet-pytorch
 - 📸 **Student Enrollment** - Capture 5 photos per student for accurate recognition
 - 🗑️ **Safe Deletion** - Deleted students moved to trash for recovery
 - ✅ **Manual Attendance** - Mark attendance manually with status options
@@ -74,15 +74,27 @@ OPENAI_API_KEY=            # Optional: For AI insights
 
 ## Running the System
 
-### 1. Start Backend Server
+### 1. Start Backend Server (FastAPI + Uvicorn)
 
 ```bash
-python backend.py
+uvicorn backend:app --reload
 ```
 
 The backend will start at `http://127.0.0.1:8000`
 
-### 2. Open Frontend
+### 2. Start React Frontend (Recommended)
+
+From the `frontend-react` folder:
+
+```bash
+cd frontend-react
+npm install
+npm run dev
+```
+
+Then open the URL shown in the console (usually `http://localhost:5173`).
+
+### 3. Legacy Static Frontend (Optional)
 
 Open `frontend/index.html` in your web browser, or use a local server:
 
@@ -204,6 +216,32 @@ Body: {
 ```
 GET /analysis/summary?range=7&explain=false
 ```
+
+## Testing (College Demo Flow)
+
+Follow this flow to verify everything end-to-end:
+
+1. **Run backend**  
+   ```bash
+   uvicorn backend:app --reload
+   ```
+2. **Run frontend**  
+   ```bash
+   cd frontend-react
+   npm run dev
+   ```
+3. **Enroll a student with 5 photos**
+   - Go to the Enroll page.
+   - Enter the student name.
+   - Capture exactly 5 images from slightly different angles.
+   - Click **Enroll Student** and wait for the success JSON.
+4. **Go to Scan → mark attendance**
+   - Open the Scan page.
+   - Ensure only one face is in frame.
+   - Trigger recognition and then mark attendance for the recognized roll.
+5. **Dashboard shows live stats**
+   - Open the Dashboard page.
+   - Confirm total students, today’s attendance, weekly charts, and recent check-ins load without errors.
 
 ## Troubleshooting
 

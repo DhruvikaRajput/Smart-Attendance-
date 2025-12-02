@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { CheckCircle, XCircle, AlertCircle, Users } from 'lucide-react';
-import Card from '../components/Card';
-import WebcamCapture from '../components/WebcamCapture';
-import { recognizeFace, markAttendance, recognizeMultipleFaces } from '../api/api';
-import { useToast } from '../components/Toast';
+import { useState } from "react";
+import { motion } from "framer-motion";
+import { CheckCircle, XCircle, AlertCircle, Users } from "lucide-react";
+import Card from "../components/Card";
+import WebcamCapture from "../components/WebcamCapture";
+import { recognizeFace, markAttendance, recognizeMultipleFaces } from "../api/api";
+import { useToast } from "../components/Toast";
 
 export default function Scan() {
   const [result, setResult] = useState(null);
@@ -13,6 +13,24 @@ export default function Scan() {
   const [marking, setMarking] = useState(false);
   const [multiMode, setMultiMode] = useState(false);
   const { showToast } = useToast();
+
+  const markAndNotify = async (studentId, studentName) => {
+    if (!studentId) {
+      return false;
+    }
+    setMarking(true);
+    try {
+      await markAttendance(studentId);
+      showToast(`Attendance marked for ${studentName || 'Student'}`, 'success');
+      return true;
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to mark attendance', 'error');
+      return false;
+    } finally {
+      setMarking(false);
+    }
+  };
 
   const handleScan = async (imageData) => {
     setScanning(true);
@@ -31,12 +49,17 @@ export default function Scan() {
         }
       } else {
         const data = await recognizeFace(imageData);
-        setResult(data);
-        if (data.status === 'recognized') {
-          showToast(`Recognized: ${data.name}`, 'success');
-        } else if (data.status === 'no_face') {
+        if (data.status === 'no_face') {
+          setResult(data);
           showToast('No face detected. Please try again.', 'warning');
+        } else if (data?.match?.student_id) {
+          const marked = await markAndNotify(data.match.student_id, data.match.name);
+          setResult({
+            ...data,
+            attendanceMarked: marked,
+          });
         } else {
+          setResult(data);
           showToast('Face not recognized', 'error');
         }
       }
@@ -46,25 +69,6 @@ export default function Scan() {
       setResult({ status: 'error', message: 'Recognition failed' });
     } finally {
       setScanning(false);
-    }
-  };
-
-  const handleMarkAttendance = async (roll = null) => {
-    const targetRoll = roll || result?.roll;
-    if (!targetRoll) return;
-    setMarking(true);
-    try {
-      await markAttendance(targetRoll);
-      const studentName = result?.name || multiResult?.matches?.find(m => m.roll === roll)?.name || 'Student';
-      showToast(`Attendance marked for ${studentName}`, 'success');
-      if (!roll) {
-        setResult(null);
-      }
-    } catch (error) {
-      console.error('Mark attendance error:', error);
-      showToast(error.response?.data?.detail || 'Failed to mark attendance', 'error');
-    } finally {
-      setMarking(false);
     }
   };
 
@@ -128,12 +132,12 @@ export default function Scan() {
                       className="p-3 bg-background rounded-button flex items-center justify-between"
                     >
                       <div>
-                        <div className="font-medium text-text-primary">{match.name}</div>
-                        <div className="text-sm text-text-secondary">Roll: {match.roll}</div>
+                    <div className="font-medium text-text-primary">{match.name}</div>
+                    <div className="text-sm text-text-secondary">ID: {match.student_id || match.roll}</div>
                         <div className="text-xs text-text-tertiary">Confidence: {match.confidence}%</div>
                       </div>
                       <button
-                        onClick={() => handleMarkAttendance(match.roll)}
+                    onClick={() => markAndNotify(match.student_id || match.roll, match.name)}
                         disabled={marking}
                         className="btn btn-success text-xs py-1.5 px-3"
                       >
@@ -162,7 +166,7 @@ export default function Scan() {
                 <div className="inline-block w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4" />
                 <p className="text-text-secondary">Processing face recognition...</p>
               </div>
-            ) : result?.status === 'recognized' ? (
+            ) : result?.status === 'recognized' && result?.match ? (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -172,26 +176,18 @@ export default function Scan() {
                   <CheckCircle size={32} className="text-green-600" />
                 </div>
                 <div>
-                  <div className="text-2xl font-bold text-text-primary mb-1">{result.name}</div>
-                  <div className="text-sm text-text-secondary">Roll: {result.roll}</div>
+                  <div className="text-2xl font-bold text-text-primary mb-1">{result.match.name}</div>
+                  <div className="text-sm text-text-secondary">ID: {result.match.student_id}</div>
                   <div className="text-xs text-text-tertiary mt-2">
-                    Confidence: {((1 - result.distance) * 100).toFixed(1)}%
+                    Confidence: {result.match.confidence ?? ((1 - (result.distance || 0)) * 100).toFixed(1)}%
                   </div>
                 </div>
-                <button
-                  onClick={handleMarkAttendance}
-                  disabled={marking}
-                  className="btn btn-success w-full"
-                >
-                  {marking ? (
-                    <>
-                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Marking...
-                    </>
-                  ) : (
-                    'Mark Attendance'
-                  )}
-                </button>
+                {result.attendanceMarked === true && (
+                  <div className="text-sm font-semibold text-green-600">Attendance marked automatically.</div>
+                )}
+                {result.attendanceMarked === false && (
+                  <div className="text-sm font-semibold text-red-500">Attendance marking failed. Please try again.</div>
+                )}
               </motion.div>
             ) : result?.status === 'no_face' ? (
               <motion.div
