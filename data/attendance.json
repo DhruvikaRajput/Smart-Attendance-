@@ -1,42 +1,34 @@
 [
   {
-    "id": "2025-11-03T20:46:20.776607_7oex20",
+    "id": "2025-12-03T12:25:50.011682_oyl0fb",
     "roll": "001",
-    "name": "sam",
+    "name": "meow",
     "status": "present",
-    "timestamp": "2025-11-03T20:46:20.776607",
+    "timestamp": "2025-12-03T12:25:50.011682",
     "source": "auto"
   },
   {
-    "id": "2025-11-04T20:48:09.407795_kne0mz",
-    "roll": "001",
-    "name": "sam",
+    "id": "2025-12-03T12:27:12.374171_w9zvqb",
+    "roll": "002",
+    "name": "rizz",
     "status": "present",
-    "timestamp": "2025-11-04T20:48:09.407795",
+    "timestamp": "2025-12-03T12:27:12.374171",
     "source": "auto"
   },
   {
-    "id": "2025-12-02T23:29:59.502220_tcofay",
-    "roll": "001",
+    "id": "2025-12-03T12:28:08.830336_y6vgqm",
+    "roll": "003",
+    "name": "esh",
+    "status": "present",
+    "timestamp": "2025-12-03T12:28:08.830336",
+    "source": "auto"
+  },
+  {
+    "id": "2025-12-03T12:28:31.577603_fr192f",
+    "roll": "004",
     "name": "sam",
-    "status": "excused",
-    "timestamp": "2025-12-02T23:29:59.502220",
-    "source": "manual"
-  },
-  {
-    "id": "2025-12-03T23:38_3skve5",
-    "roll": "003",
-    "name": "sam1",
     "status": "present",
-    "timestamp": "2025-12-03T12:38:00.000Z",
-    "source": "manual"
-  },
-  {
-    "id": "2025-12-02T23:39:42.366161_o313c4",
-    "roll": "003",
-    "name": "sam1",
-    "status": "present",
-    "timestamp": "2025-12-02T23:39:42.366161",
+    "timestamp": "2025-12-03T12:28:31.577603",
     "source": "auto"
   }
 ]
