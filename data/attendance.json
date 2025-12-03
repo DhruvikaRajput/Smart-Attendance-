@@ -1,10 +1,42 @@
 [
   {
-    "id": "2025-12-02T15:36:15.403305_d1chxh",
+    "id": "2025-11-03T20:46:20.776607_7oex20",
     "roll": "001",
     "name": "sam",
     "status": "present",
-    "timestamp": "2025-12-02T15:36:15.403305",
+    "timestamp": "2025-11-03T20:46:20.776607",
+    "source": "auto"
+  },
+  {
+    "id": "2025-11-04T20:48:09.407795_kne0mz",
+    "roll": "001",
+    "name": "sam",
+    "status": "present",
+    "timestamp": "2025-11-04T20:48:09.407795",
+    "source": "auto"
+  },
+  {
+    "id": "2025-12-02T23:29:59.502220_tcofay",
+    "roll": "001",
+    "name": "sam",
+    "status": "excused",
+    "timestamp": "2025-12-02T23:29:59.502220",
+    "source": "manual"
+  },
+  {
+    "id": "2025-12-03T23:38_3skve5",
+    "roll": "003",
+    "name": "sam1",
+    "status": "present",
+    "timestamp": "2025-12-03T12:38:00.000Z",
+    "source": "manual"
+  },
+  {
+    "id": "2025-12-02T23:39:42.366161_o313c4",
+    "roll": "003",
+    "name": "sam1",
+    "status": "present",
+    "timestamp": "2025-12-02T23:39:42.366161",
     "source": "auto"
   }
 ]
